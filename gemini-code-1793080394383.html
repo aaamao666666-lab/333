@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>卡密混淆批量生成工具</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #4a90e2; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; display: flex; align-items: center; flex-wrap: wrap; }
+        .form-group label { width: 140px; font-weight: bold; }
+        .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; flex: 1; max-width: 300px; }
+        .checkbox-group { display: flex; gap: 15px; }
+        .checkbox-group label { width: auto; font-weight: normal; cursor: pointer; }
+        .btn-group { margin-top: 20px; display: flex; gap: 10px; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; background: #4a90e2; color: #fff; font-size: 14px; cursor: pointer; }
+        button:hover { background: #357abd; }
+        button.secondary { background: #27ae60; }
+        button.secondary:hover { background: #1e8449; }
+        textarea { width: 100%; height: 320px; margin-top: 15px; border: 1px solid #ccc; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 13px; box-sizing: border-box; white-space: pre; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>卡密混淆 & SQL 导出生成器</h2>
+    
+    <div class="form-group">
+        <label>卡号前缀：</label>
+        <input type="text" id="prefix" value="WABOT">
+    </div>
+    
+    <div class="form-group">
+        <label>周期代码/套餐标识：</label>
+        <input type="text" id="period" value="W0007" placeholder="例: W0007 表示7天, M0030 表示30天">
+    </div>
+
+    <div class="form-group">
+        <label>随机特征码位数：</label>
+        <input type="number" id="randLen" value="6" min="4" max="32">
+    </div>
+
+    <div class="form-group">
+        <label>校验码位数：</label>
+        <input type="number" id="checkLen" value="2" min="1" max="8">
+    </div>
+
+    <div class="form-group">
+        <label>生成数量：</label>
+        <input type="number" id="count" value="10" min="1" max="5000">
+    </div>
+
+    <div class="form-group">
+        <label>字符集混淆设置：</label>
+        <div class="checkbox-group">
+            <label><input type="checkbox" id="noConfuse" checked> 排除易混淆字符 (0, O, I, 1)</label>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>输出模式：</label>
+        <select id="outputMode" onchange="toggleSqlConfig()">
+            <option value="txt">纯文本卡密列表</option>
+            <option value="sql">插入语句 SQL</option>
+        </select>
+    </div>
+
+    <!-- SQL 配置项 -->
+    <div id="sqlConfig" style="display: none; background: #f8f9fa; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
+        <div class="form-group" style="margin-bottom: 8px;">
+            <label>数据库表名：</label>
+            <input type="text" id="tableName" value="wabot_cards">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>对应有效天数：</label>
+            <input type="number" id="durationDays" value="7">
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button onclick="generateCards()">立即批量生成</button>
+        <button class="secondary" onclick="copyResult()">复制到剪贴板</button>
+        <button class="secondary" onclick="downloadResult()">导出下载文件</button>
+    </div>
+
+    <textarea id="result" placeholder="生成的结果将显示在这里..."></textarea>
+</div>
+
+<script>
+function toggleSqlConfig() {
+    const mode = document.getElementById('outputMode').value;
+    document.getElementById('sqlConfig').style.display = (mode === 'sql') ? 'block' : 'none';
+}
+
+function getRandomString(length, excludeConfusing) {
+    let chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // 默认已排除 0, O, I, 1
+    if (!excludeConfusing) {
+        chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    }
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+function generateCards() {
+    const prefix = document.getElementById('prefix').value.trim();
+    const period = document.getElementById('period').value.trim();
+    const randLen = parseInt(document.getElementById('randLen').value);
+    const checkLen = parseInt(document.getElementById('checkLen').value);
+    const count = parseInt(document.getElementById('count').value);
+    const noConfuse = document.getElementById('noConfuse').checked;
+    const mode = document.getElementById('outputMode').value;
+
+    let results = [];
+    let set = new Set(); // 用于防重
+
+    while (set.size < count) {
+        const randStr = getRandomString(randLen, noConfuse);
+        const checkStr = getRandomString(checkLen, noConfuse);
+        
+        let card = "";
+        if (prefix && period) {
+            card = `${prefix}-${period}-${randStr}-${checkStr}`;
+        } else if (prefix) {
+            card = `${prefix}-${randStr}-${checkStr}`;
+        } else {
+            card = `${randStr}-${checkStr}`;
+        }
+        set.add(card);
+    }
+
+    const cardArray = Array.from(set);
+
+    if (mode === 'txt') {
+        document.getElementById('result').value = cardArray.join('\n');
+    } else {
+        const tableName = document.getElementById('tableName').value.trim() || 'cards';
+        const days = document.getElementById('durationDays').value || 7;
+        
+        let sql = `-- 批量插入卡密数据 (共 ${count} 条)\n`;
+        sql += `INSERT INTO \`${tableName}\` (\`card_code\`, \`duration_days\`, \`status\`, \`created_at\`) VALUES\n`;
+        
+        const sqlRows = cardArray.map(code => {
+            return `('${code}', ${days}, 0, NOW())`;
+        });
+        
+        sql += sqlRows.join(',\n') + ';';
+        document.getElementById('result').value = sql;
+    }
+}
+
+function copyResult() {
+    const text = document.getElementById('result');
+    if (!text.value) return alert('没有可复制的内容！');
+    text.select();
+    document.execCommand('copy');
+    alert('已成功复制到剪贴板！');
+}
+
+function downloadResult() {
+    const content = document.getElementById('result').value;
+    if (!content) return alert('没有可导出的内容！');
+    
+    const mode = document.getElementById('outputMode').value;
+    const ext = mode === 'sql' ? 'sql' : 'txt';
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `wabot_cards_${Date.now()}.${ext}`;
+    a.click();
+}
+</script>
+
+</body>
+</html>
